@@ -8,7 +8,13 @@ def _sync_streamlit_secrets_to_env() -> None:
     """Mirror Cloud/local secrets into os.environ for modules that use getenv()."""
     try:
         sec = st.secrets
-        for key in ("DB_CONNECTION_STRING", "OPENAI_API_KEY", "CONVERTAPI_SECRET"):
+        for key in (
+            "DB_CONNECTION_STRING",
+            "DB_CONNECTION_STRING_POOLER",
+            "SUPABASE_POOLER_REGION",
+            "OPENAI_API_KEY",
+            "CONVERTAPI_SECRET",
+        ):
             if os.environ.get(key):
                 continue
             try:

@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 import os
 import sys
+import re
+from urllib.parse import quote, urlparse, unquote
 
 try:
     import streamlit as st
@@ -14,6 +16,9 @@ try:
 except Exception:
     psycopg2 = None
     psycopg2_extras = None
+
+# First DSN that successfully connected (pooler vs direct)
+_working_conn_str: Optional[str] = None
 
 
 def _connection_string_from_secrets_file() -> Optional[str]:
@@ -37,8 +42,23 @@ def _connection_string_from_secrets_file() -> Optional[str]:
     return None
 
 
+def _secret_get(key: str) -> Optional[str]:
+    if st is not None and hasattr(st, "secrets"):
+        try:
+            v = st.secrets[key]
+            if v:
+                return str(v).strip()
+        except Exception:
+            pass
+    v = os.environ.get(key)
+    return v.strip() if v else None
+
+
 def get_connection_string() -> Optional[str]:
-    # Streamlit runtime (secrets is a mapping, not always dict)
+    """Primary configured DSN (for display / single-string APIs)."""
+    pool = _secret_get("DB_CONNECTION_STRING_POOLER")
+    if pool:
+        return pool
     if st is not None and hasattr(st, "secrets"):
         try:
             c = st.secrets["DB_CONNECTION_STRING"]
@@ -58,13 +78,120 @@ def get_connection_string() -> Optional[str]:
     return _connection_string_from_secrets_file()
 
 
-def get_connection():
-    conn_str = get_connection_string()
-    if not conn_str:
-        raise RuntimeError('Database connection string not set. Set st.secrets["DB_CONNECTION_STRING"] or env DB_CONNECTION_STRING')
+def _supabase_direct_to_pooler_candidates(direct_url: str) -> List[str]:
+    """
+    If URL looks like Supabase direct (db.<ref>.supabase.co:5432), build Session pooler URLs.
+    See: https://supabase.com/docs/guides/database/connecting-to-postgres#connection-pooler
+    """
+    u = direct_url.strip()
+    try:
+        p = urlparse(u)
+    except Exception:
+        return []
+    host = (p.hostname or "").lower()
+    if not host.startswith("db.") or not host.endswith(".supabase.co"):
+        return []
+    if p.port not in (None, 5432):
+        return []
+    ref = host[3 : -len(".supabase.co")]
+    if not re.match(r"^[a-z0-9]{15,25}$", ref):
+        return []
+    password = unquote(p.password or "")
+    if not password:
+        return []
+    dbn = (p.path or "/postgres").strip("/") or "postgres"
+    if p.query:
+        q = f"?{p.query}"
+        if "sslmode" not in p.query.lower():
+            q += "&sslmode=require"
+    else:
+        q = "?sslmode=require"
+
+    pool_user = f"postgres.{ref}"
+    pwq = quote(password, safe="")
+    regions = []
+    reg = _secret_get("SUPABASE_POOLER_REGION")
+    if reg:
+        regions.append(reg.strip())
+    for r in (
+        "me-central-1",
+        "eu-central-1",
+        "eu-west-1",
+        "us-east-1",
+        "us-west-1",
+        "ap-south-1",
+        "ap-southeast-1",
+    ):
+        if r not in regions:
+            regions.append(r)
+    out: List[str] = []
+    for region in regions:
+        phost = f"aws-0-{region}.pooler.supabase.com"
+        out.append(f"postgresql://{quote(pool_user, safe='.@')}:{pwq}@{phost}:6543/{dbn}{q}")
+    return out
+
+
+def _connection_candidates() -> List[str]:
+    seen = set()
+    out: List[str] = []
+
+    def add(s: Optional[str]) -> None:
+        if not s:
+            return
+        s = s.strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    add(_secret_get("DB_CONNECTION_STRING_POOLER"))
+    primary = get_connection_string()
+    add(primary)
+    if primary:
+        for d in _supabase_direct_to_pooler_candidates(primary):
+            add(d)
+    return out
+
+
+def _connect_first_available(candidates: List[str]) -> Tuple[Any, str]:
+    global _working_conn_str
     if psycopg2 is None:
-        raise RuntimeError('psycopg2 is required but not installed. Please install psycopg2-binary')
-    return psycopg2.connect(conn_str, connect_timeout=20)
+        raise RuntimeError("psycopg2 is required but not installed")
+    last_err: Optional[Exception] = None
+    for i, cs in enumerate(candidates):
+        # First tries (configured DSNs): longer timeout; auto pooler guesses: shorter
+        timeout = 16 if i < 2 else 9
+        try:
+            conn = psycopg2.connect(cs, connect_timeout=timeout)
+            _working_conn_str = cs
+            return conn, cs
+        except Exception as e:
+            last_err = e
+            continue
+    _working_conn_str = None
+    if last_err:
+        raise last_err
+    raise RuntimeError("No database connection string configured")
+
+
+def get_connection():
+    global _working_conn_str
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 is required but not installed. Please install psycopg2-binary")
+
+    if _working_conn_str:
+        try:
+            return psycopg2.connect(_working_conn_str, connect_timeout=20)
+        except Exception:
+            _working_conn_str = None
+
+    cands = _connection_candidates()
+    if not cands:
+        raise RuntimeError(
+            'Database connection string not set. Set st.secrets["DB_CONNECTION_STRING"] '
+            'or optional DB_CONNECTION_STRING_POOLER (Session pooler, port 6543)'
+        )
+    conn, _ = _connect_first_available(cands)
+    return conn
 
 
 def check_db_connection():
@@ -73,24 +200,32 @@ def check_db_connection():
     """
     if psycopg2 is None:
         return False, "مكتبة psycopg2 غير متوفرة."
-    conn_str = get_connection_string()
-    if not conn_str or not str(conn_str).strip():
+    cands = _connection_candidates()
+    if not cands:
         return False, (
             "لم يُعثر على DB_CONNECTION_STRING. في Streamlit Cloud: App settings → Secrets "
             "وأضف سطر: DB_CONNECTION_STRING = \"postgresql://...\""
         )
+    global _working_conn_str
+    prev = _working_conn_str
+    _working_conn_str = None
     try:
-        conn = psycopg2.connect(conn_str, connect_timeout=20)
+        conn, used = _connect_first_available(cands)
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
-            return True, "قاعدة البيانات (Supabase) متصلة."
+            pool = ":6543" in used or "pooler" in used.lower()
+            return True, (
+                "قاعدة البيانات (Supabase) متصلة"
+                + (" عبر Session pooler." if pool else ".")
+            )
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
     except Exception as e:
+        _working_conn_str = prev
         raw = (str(e) or "").lower()
         hint = ""
         if "timeout" in raw or "timed out" in raw or "could not connect" in raw:
