@@ -37,16 +37,24 @@ def dashboard_new_app():
     # ربط البيانات مع Excel
     @st.cache_data(ttl=10, show_spinner=False)
     def _load_or_empty(path, columns):
+        def _read_excel_safe():
+            try:
+                d = pd.read_excel(path)
+                d.columns = [c.strip().lower() for c in d.columns]
+                return d
+            except Exception:
+                return pd.DataFrame(columns=columns)
+
         df = None
-        db_checked = False
+        db_ok = False
         if _db is not None:
             try:
-                db_checked = True
                 if path.endswith("records.xlsx"):
                     rows = _db.db_query(
                         "SELECT base_id, date, type, number, amount, client_name, phone, location, note FROM records ORDER BY date"
                     )
                     df = pd.DataFrame(rows)
+                    db_ok = True
                     if not df.empty:
                         df.columns = [c.strip().lower() for c in df.columns]
                         if "date" in df.columns:
@@ -66,19 +74,21 @@ def dashboard_new_app():
                         "SELECT name, phone, email, address FROM customers ORDER BY id"
                     )
                     df = pd.DataFrame(rows)
+                    db_ok = True
                     if not df.empty:
                         df = df.rename(columns={"name": "client_name", "address": "location"})
                         df.columns = [c.strip().lower() for c in df.columns]
             except Exception:
                 df = None
-        # Production behavior: when DB is configured/reachable, do not fallback to local Excel.
-        if df is None and not db_checked:
-            try:
-                df = pd.read_excel(path)
-                df.columns = [c.strip().lower() for c in df.columns]
-            except Exception:
-                df = pd.DataFrame(columns=columns)
-        elif df is None:
+                db_ok = False
+
+        # DB error → Excel. DB empty → Excel (e.g. Streamlit Cloud + seeded repo xlsx until Supabase is filled).
+        if not db_ok or df is None or df.empty:
+            xdf = _read_excel_safe()
+            if not xdf.empty:
+                df = xdf
+
+        if df is None:
             df = pd.DataFrame(columns=columns)
         for col in columns:
             if col not in df.columns:
