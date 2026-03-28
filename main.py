@@ -28,7 +28,7 @@ def _sync_streamlit_secrets_to_env() -> None:
 
 
 _sync_streamlit_secrets_to_env()
-from utils import db as _db_status
+from utils.db import check_db_connection
 from pages_custom.quotation_page import quotation_app
 from pages_custom.invoice_page import invoice_app
 from pages_custom.receipt_page import receipt_app
@@ -745,7 +745,7 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    _ok_db, _db_msg = _db_status.check_db_connection()
+    _ok_db, _db_msg = check_db_connection()
     if _ok_db:
         st.caption("Supabase: متصل")
     else:
