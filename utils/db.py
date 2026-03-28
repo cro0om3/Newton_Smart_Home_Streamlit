@@ -64,7 +64,51 @@ def get_connection():
         raise RuntimeError('Database connection string not set. Set st.secrets["DB_CONNECTION_STRING"] or env DB_CONNECTION_STRING')
     if psycopg2 is None:
         raise RuntimeError('psycopg2 is required but not installed. Please install psycopg2-binary')
-    return psycopg2.connect(conn_str)
+    return psycopg2.connect(conn_str, connect_timeout=20)
+
+
+def check_db_connection():
+    """
+    Returns (ok: bool, message: str). Message is safe for UI (Arabic hints, no password).
+    """
+    if psycopg2 is None:
+        return False, "مكتبة psycopg2 غير متوفرة."
+    conn_str = get_connection_string()
+    if not conn_str or not str(conn_str).strip():
+        return False, (
+            "لم يُعثر على DB_CONNECTION_STRING. في Streamlit Cloud: App settings → Secrets "
+            "وأضف سطر: DB_CONNECTION_STRING = \"postgresql://...\""
+        )
+    try:
+        conn = psycopg2.connect(conn_str, connect_timeout=20)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return True, "قاعدة البيانات (Supabase) متصلة."
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        raw = (str(e) or "").lower()
+        hint = ""
+        if "timeout" in raw or "timed out" in raw or "could not connect" in raw:
+            hint = (
+                " غالباً Streamlit Cloud لا يصل للمنفذ 5432 المباشر. من Supabase: "
+                "Settings → Database → استخدم **Connection pooling** / **Session mode** "
+                "والمنفذ **6543** (مثال: …pooler.supabase.com:6543…)."
+            )
+        elif "password authentication failed" in raw or "invalid password" in raw:
+            hint = " تحقق من كلمة مرور مستخدم postgres في Secrets (وليس مفتاح anon)."
+        elif "could not translate host name" in raw or "name or service not known" in raw:
+            hint = " تحقق من اسم المضيف (host) في سلسلة الاتصال."
+        elif "ssl" in raw or "certificate" in raw:
+            hint = " أضف في نهاية الرابط: ?sslmode=require"
+        elif "no pg_hba.conf entry" in raw or "no encryption" in raw:
+            hint = " استخدم sslmode=require في سلسلة الاتصال."
+        first = str(e).strip().split("\n")[0][:180]
+        return False, first + hint
 
 
 def db_query(query: str, params: Optional[tuple] = None) -> List[dict]:

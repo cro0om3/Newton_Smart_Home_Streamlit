@@ -22,6 +22,7 @@ def _sync_streamlit_secrets_to_env() -> None:
 
 
 _sync_streamlit_secrets_to_env()
+from utils import db as _db_status
 from pages_custom.quotation_page import quotation_app
 from pages_custom.invoice_page import invoice_app
 from pages_custom.receipt_page import receipt_app
@@ -737,7 +738,14 @@ with st.sidebar:
             <div style='font-size:12px; color:var(--text-soft); margin-top:4px;'>Role: {user_role.title()}</div>
         </div>
     """, unsafe_allow_html=True)
-    
+
+    _ok_db, _db_msg = _db_status.check_db_connection()
+    if _ok_db:
+        st.caption("Supabase: متصل")
+    else:
+        with st.expander("Supabase: غير متصل", expanded=True):
+            st.warning(_db_msg)
+
     if st.button(f"{ICON_MAP['logout']} Logout", use_container_width=True, key="logout_btn"):
         log_event(user_name, "System", "logout", f"User logged out")
         st.session_state.authenticated = False
