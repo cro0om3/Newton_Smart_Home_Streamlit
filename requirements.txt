@@ -1,0 +1,11 @@
+streamlit
+pandas
+openpyxl
+python-docx
+pillow
+convertapi
+weasyprint
+Jinja2
+altair
+openai
+psycopg2-binary

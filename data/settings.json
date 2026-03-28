@@ -1,0 +1,14 @@
+{
+  "company_name": "Newton Smart Home",
+  "default_prepared_by": "Sales Team",
+  "default_approved_by": "Manager",
+  "contact_email": "info@newtonsmarthome.com",
+  "contact_phone": "+971 52 779 0975",
+  "currency": "AED",
+  "ui_product_image_width_px": 350,
+  "ui_product_image_height_px": 195,
+  "quote_product_image_width_cm": 3.49,
+  "quote_product_image_height_cm": 1.5,
+  "openai_api_key": "",
+  "ui_accent": "winter"
+}

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore temporary Excel lock files
+data/~$*
+
+# Supabase / DB connection (never commit!)
+.streamlit/secrets.toml
+data/supabase_db_url.txt
+data/streamlit_secrets_paste.toml
+.env
+.env.local
+
+# Generated exports (recreated on each deploy / locally)
+data/exports/
+
+# You can uncomment the following lines to avoid committing heavy generated assets
+# data/product_images/

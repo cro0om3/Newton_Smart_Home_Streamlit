@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation and temp files
+*.md
+docs/
+README.md
+DEPLOYMENT.md
+Stracture.txt
+*.crdownload
+
+# Test and script artifacts (keep main scripts but exclude test outputs)
+scripts/test_*.py
+Unconfirmed*
+
+# Data files that shouldn't be in the image (will be mounted or created at runtime)
+data/exports/*
+data/*.xlsx
+data/*.json
+
+# Templates backup folder
+templates/New folder/
+
+# Logs
+*.log
+
+# Theme files (optional - include if you want VS Code themes in container)
+themes/
