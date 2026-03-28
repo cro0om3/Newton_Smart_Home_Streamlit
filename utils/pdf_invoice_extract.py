@@ -121,7 +121,10 @@ def extract_fields_from_pdf(path: Path) -> Dict[str, Any]:
     for pat in (
         rf"{_TOTAL_INV}\s*\n+\s*AED\s*([\d,]+\.?\d*)",
         rf"{_TOTAL_AMT}\s*\n+\s*AED\s*([\d,]+\.?\d*)",
+        rf"{_TOTAL_INV}\s+AED\s*([\d,]+\.?\d*)",
+        rf"{_TOTAL_AMT}\s+AED\s*([\d,]+\.?\d*)",
         r"Balance\s+Due\s*\n+\s*AED\s*([\d,]+\.?\d*)",
+        r"Balance\s+Due\s+AED\s*([\d,]+\.?\d*)",
         r"Total\s+Invoice\s+Amount\s*AED\s*([\d,]+\.?\d*)",
         r"Total\s+Amount\s*AED\s*([\d,]+\.?\d*)",
     ):

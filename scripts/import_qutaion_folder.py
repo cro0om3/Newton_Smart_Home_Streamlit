@@ -161,10 +161,18 @@ def _parse_quotation_row(path: Path, idx: int) -> dict:
 
     base_id = f"IMP-{datetime.now().strftime('%Y%m%d')}-{idx:04d}"
 
+    # Document type: quotations vs invoices (dashboard & reports use this)
+    sl = stem.lower()
+    nl = name.lower()
+    if sl.startswith("quotation") or "quo-" in sl:
+        doc_type = "q"
+    else:
+        doc_type = "i"
+
     row = {
         "base_id": base_id,
         "date": date_str,
-        "type": "q",
+        "type": doc_type,
         "number": number[:200],
         "amount": 0.0,
         "client_name": (client or "-")[:200],

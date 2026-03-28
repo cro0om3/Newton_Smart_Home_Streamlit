@@ -148,9 +148,15 @@ def dashboard_new_app():
     total_q = int((rec["type"] == "q").sum()) if "type" in rec.columns else 0
     total_i = int((rec["type"] == "i").sum()) if "type" in rec.columns else 0
     total_r = int((rec["type"] == "r").sum()) if "type" in rec.columns else 0
-    total_invoice_amount = float(rec.loc[rec.get("type","") == "i", "amount"].sum()) if "amount" in rec.columns else 0.0
-    total_received = float(rec.loc[rec.get("type","") == "r", "amount"].sum()) if "amount" in rec.columns else 0.0
-    remaining_balance = total_invoice_amount - total_received
+    amt = pd.to_numeric(rec["amount"], errors="coerce").fillna(0.0) if "amount" in rec.columns else pd.Series(dtype=float)
+    total_invoice_amount = float(amt[rec["type"] == "i"].sum()) if "type" in rec.columns else 0.0
+    total_quotation_amount = float(amt[rec["type"] == "q"].sum()) if "type" in rec.columns else 0.0
+    total_all_value = float(amt.sum()) if len(amt) else 0.0
+    total_received = float(amt[rec["type"] == "r"].sum()) if "type" in rec.columns else 0.0
+    # Outstanding: invoice-backed first; else quotation pipeline minus receipts
+    remaining_balance = max(total_invoice_amount - total_received, 0.0)
+    if total_invoice_amount <= 0 and total_quotation_amount > 0:
+        remaining_balance = max(total_quotation_amount - total_received, 0.0)
 
     c1, c2, c3 = st.columns(3)
     with c1: _metric("Quotations", total_q, "Active proposals")
@@ -158,7 +164,7 @@ def dashboard_new_app():
     with c3: _metric("Receipts", total_r, "Recorded payments")
 
     c4, c5, c6 = st.columns(3)
-    with c4: _metric("Invoice Volume", f"AED {total_invoice_amount:,.0f}")
+    with c4: _metric("Total value (DB)", f"AED {total_all_value:,.0f}", "Invoices + quotations")
     with c5: _metric("Received", f"AED {total_received:,.0f}")
     with c6: _metric("Outstanding", f"AED {remaining_balance:,.0f}")
 
@@ -179,7 +185,11 @@ def dashboard_new_app():
             i = g[g["type"] == "i"]
             r = g[g["type"] == "r"]
             invoiced = float(i["amount"].sum()) if not i.empty else 0.0
+            quoted = float(q["amount"].sum()) if not q.empty else 0.0
             received = float(r["amount"].sum()) if not r.empty else 0.0
+            # Show invoice total when present; otherwise quotation total (imported PDFs were often all-q)
+            display_amount = invoiced if invoiced > 0 else quoted
+            display_balance = max(display_amount - received, 0.0)
             sample = g.sort_values("date", ascending=False).iloc[0]
             last_dt = sample.get("date")
             lifecycle_rows.append(
@@ -191,8 +201,8 @@ def dashboard_new_app():
                     "Quotation": not q.empty,
                     "Invoice": not i.empty,
                     "Receipt": not r.empty,
-                    "Amount": invoiced,
-                    "Balance": max(invoiced - received, 0.0),
+                    "Amount": display_amount,
+                    "Balance": display_balance,
                     "Last Update": last_dt.strftime("%Y-%m-%d") if pd.notna(last_dt) else "",
                 }
             )

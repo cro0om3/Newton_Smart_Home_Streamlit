@@ -21,6 +21,13 @@ sys.path.insert(0, str(REPO_ROOT))
 from utils.pdf_invoice_extract import merge_pdf_into_row  # noqa: E402
 
 
+def _doc_type_from_filename(fname: str) -> str:
+    sl = Path(fname).stem.lower()
+    if sl.startswith("quotation") or "quo-" in sl:
+        return "q"
+    return "i"
+
+
 def _load_conn_string() -> str:
     s = os.environ.get("DB_CONNECTION_STRING") or os.environ.get("SUPABASE_DB_URL")
     if s:
@@ -65,7 +72,7 @@ def main() -> None:
                 """
                 SELECT base_id, note, client_name, amount
                 FROM records
-                WHERE note LIKE 'imported_pdf:%%' AND type = 'q'
+                WHERE note LIKE 'imported_pdf:%%'
                 ORDER BY base_id
                 """
             )
@@ -89,10 +96,11 @@ def main() -> None:
                 "amount": float(old_amt or 0),
             }
             merge_pdf_into_row(pdf, patch)
+            new_type = _doc_type_from_filename(fname)
 
             if args.dry_run:
                 print(
-                    f"DRY {fname}: client {old_client!r} -> {patch['client_name']!r} "
+                    f"DRY {fname}: type->{new_type} client {old_client!r} -> {patch['client_name']!r} "
                     f"amt {old_amt} -> {patch['amount']}"
                 )
                 updated += 1
@@ -102,10 +110,11 @@ def main() -> None:
                 cur.execute(
                     """
                     UPDATE records
-                    SET client_name = %s, phone = %s, location = %s, amount = %s
+                    SET type = %s, client_name = %s, phone = %s, location = %s, amount = %s
                     WHERE base_id = %s
                     """,
                     (
+                        new_type,
                         patch["client_name"],
                         patch["phone"],
                         patch["location"],
@@ -114,7 +123,9 @@ def main() -> None:
                     ),
                 )
             updated += 1
-            print(f"OK {fname}: client={patch['client_name']!r} amount={patch['amount']}")
+            print(
+                f"OK {fname}: type={new_type} client={patch['client_name']!r} amount={patch['amount']}"
+            )
 
         if not args.dry_run:
             conn.commit()
