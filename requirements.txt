@@ -9,3 +9,4 @@ Jinja2
 altair
 openai
 psycopg2-binary
+pymupdf

@@ -24,6 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
 DEFAULT_QUTAION_DIR = WORKSPACE_ROOT / "qutaion"
 
+sys.path.insert(0, str(REPO_ROOT))
+from utils.pdf_invoice_extract import merge_pdf_into_row  # noqa: E402
+
 DEFAULT_USERS = [
     (
         "Admin",
@@ -158,7 +161,7 @@ def _parse_quotation_row(path: Path, idx: int) -> dict:
 
     base_id = f"IMP-{datetime.now().strftime('%Y%m%d')}-{idx:04d}"
 
-    return {
+    row = {
         "base_id": base_id,
         "date": date_str,
         "type": "q",
@@ -169,6 +172,8 @@ def _parse_quotation_row(path: Path, idx: int) -> dict:
         "location": "",
         "note": f"imported_pdf:{name}"[:500],
     }
+    merge_pdf_into_row(path, row)
+    return row
 
 
 def _slug(s: str) -> str:
@@ -222,14 +227,16 @@ def main() -> None:
 
     print(f"Found {len(pdfs)} PDF(s) in {folder}")
     for p, r in zip(pdfs, rows):
-        print(f"  - {p.name} -> number={r['number']} client={r['client_name']} date={r['date']}")
+        print(
+            f"  - {p.name} -> number={r['number']} client={r['client_name']} "
+            f"amount={r['amount']} date={r['date']}"
+        )
 
     if args.dry_run:
         print("Dry run; no database changes.")
         return
 
     os.environ["DB_CONNECTION_STRING"] = _load_conn_string()
-    sys.path.insert(0, str(REPO_ROOT))
     import psycopg2
 
     conn = psycopg2.connect(os.environ["DB_CONNECTION_STRING"], connect_timeout=30)
