@@ -34,59 +34,42 @@ def _metric(title, value, subtitle=None):
 def dashboard_new_app():
     _apply_dashboard_theme()
     _app_icon_grid()
-    # ربط البيانات مع Excel
+    # بيانات الداشبورد من Supabase فقط (بدون Excel)
     @st.cache_data(ttl=10, show_spinner=False)
-    def _load_or_empty(path, columns):
-        def _read_excel_safe():
-            try:
-                d = pd.read_excel(path)
-                d.columns = [c.strip().lower() for c in d.columns]
-                return d
-            except Exception:
-                return pd.DataFrame(columns=columns)
-
+    def _load_from_db(kind: str, columns):
         df = None
-        db_ok = False
-        if _db is not None:
-            try:
-                if path.endswith("records.xlsx"):
-                    rows = _db.db_query(
-                        "SELECT base_id, date, type, number, amount, client_name, phone, location, note FROM records ORDER BY date"
-                    )
-                    df = pd.DataFrame(rows)
-                    db_ok = True
-                    if not df.empty:
-                        df.columns = [c.strip().lower() for c in df.columns]
-                        if "date" in df.columns:
-                            df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                        if "type" in df.columns:
-                            df["type"] = (
-                                df["type"]
-                                .astype(str)
-                                .str.strip()
-                                .str.lower()
-                                .replace({"quotation": "q", "invoice": "i", "receipt": "r"})
-                            )
-                        if "amount" in df.columns:
-                            df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-                elif path.endswith("customers.xlsx"):
-                    rows = _db.db_query(
-                        "SELECT name, phone, email, address FROM customers ORDER BY id"
-                    )
-                    df = pd.DataFrame(rows)
-                    db_ok = True
-                    if not df.empty:
-                        df = df.rename(columns={"name": "client_name", "address": "location"})
-                        df.columns = [c.strip().lower() for c in df.columns]
-            except Exception:
-                df = None
-                db_ok = False
-
-        # DB error → Excel. DB empty → Excel (e.g. Streamlit Cloud + seeded repo xlsx until Supabase is filled).
-        if not db_ok or df is None or df.empty:
-            xdf = _read_excel_safe()
-            if not xdf.empty:
-                df = xdf
+        if _db is None:
+            return pd.DataFrame(columns=columns)
+        try:
+            if kind == "records":
+                rows = _db.db_query(
+                    "SELECT base_id, date, type, number, amount, client_name, phone, location, note FROM records ORDER BY date"
+                )
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    df.columns = [c.strip().lower() for c in df.columns]
+                    if "date" in df.columns:
+                        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                    if "type" in df.columns:
+                        df["type"] = (
+                            df["type"]
+                            .astype(str)
+                            .str.strip()
+                            .str.lower()
+                            .replace({"quotation": "q", "invoice": "i", "receipt": "r"})
+                        )
+                    if "amount" in df.columns:
+                        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+            elif kind == "customers":
+                rows = _db.db_query(
+                    "SELECT name, phone, email, address FROM customers ORDER BY id"
+                )
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    df = df.rename(columns={"name": "client_name", "address": "location"})
+                    df.columns = [c.strip().lower() for c in df.columns]
+        except Exception:
+            df = None
 
         if df is None:
             df = pd.DataFrame(columns=columns)
@@ -95,12 +78,12 @@ def dashboard_new_app():
                 df[col] = None
         return df[columns]
 
-    records = _load_or_empty(
-        "data/records.xlsx",
+    records = _load_from_db(
+        "records",
         ["base_id", "date", "type", "number", "amount", "client_name", "phone", "location", "note"],
     )
-    customers = _load_or_empty(
-        "data/customers.xlsx",
+    customers = _load_from_db(
+        "customers",
         ["client_name", "phone", "location", "last_activity", "status"],
     )
 
